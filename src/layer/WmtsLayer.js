@@ -80,6 +80,17 @@ define([
              */
             this.timeString = timeString;
 
+            // Attempt to define a default timeString from available dimensions in the event a timeString is not
+            // specified
+            if (!this.timeString && layerCaps.dimension) {
+                for (var i = 0; i < layerCaps.dimension.length; i++) {
+                    if (layerCaps.dimension[i].identifier.toLowerCase() === "time") {
+                        this.timeString = layerCaps.dimension[i].default;
+                        break;
+                    }
+                }
+            }
+
             // Determine image format
             var formats = layerCaps.format;
 
@@ -415,7 +426,7 @@ define([
                     replace("{TileCol}", tile.column).replace("{TileRow}", tile.row);
 
                 if (this.timeString) {
-                    url.replace("{Time}", this.timeString);
+                    url = url.replace("{Time}", this.timeString);
                 }
             } else {
                 url = this.serviceUrl + "service=WMTS&request=GetTile&version=1.0.0";
