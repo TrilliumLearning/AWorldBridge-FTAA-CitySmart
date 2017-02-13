@@ -43,15 +43,26 @@ define([
          * @constructor
          * @augments Layer
          * @classdesc Displays a WMTS image layer.
-         * @param {WmtsLayerCapabilities} layerCaps The WMTS layer capabilities describing this layer.
-         * @param {String} styleIdentifier The style to use for this layer. Must be one of those listed in the accompanying
-         * layer capabilities. May be null, in which case the WMTS server's default style is used.
-         * @param {String} timeString The time parameter passed to the WMTS server when imagery is requested. May be
-         * null, in which case no time parameter is passed to the server.
-         * @throws {ArgumentError} If the specified layer capabilities reference is null or undefined.
+         * @param {{}} config Specifies configuration information for the layer. Must contain the following
+         * properties:
+         * <ul>
+         *     <li>title: {String} The title of the layer.</li>
+         *     <li>layerIdentifier: {String} The identifier of the layer.</li>
+         *     <li>styleIdentifier: {String} The style identifier.</li>
+         *     <li>imageFormat: {String} The mime type of the image.</li>
+         *     <li>resourceUrl: {String} The REST url template (if supported).</li>
+         *     <li>serviceUrl: {String} The KVP url (if supported).</li>
+         *     <li>tileMatrixSet: {{}} The WMTS TileMatrixSet object to use for this layer.</li>
+         *     <li>boundingBox: {Array} The array of BoundingBox elements for the layer (optional).</li>
+         *     <li>wgs84BoundingBox: {{}} The Wgs84BoundingBox element model.</li>
+         *     <li>timeString (optional): {String} the time parameter passed to the WMS when imagery is requested. </li>
+         * </ul>
+         * The function [WmtsLayer.createConfigurationFromLayer]{@link WmsLayer#createConfigurationFromLayer} will create an
+         * appropriate configuration object given a {@link WmtsLayerCapabilities} object.
+         * @throws {ArgumentError} If the specified configuration is null or undefined.
          */
-        var WmtsLayer = function (layerCaps, styleIdentifier, timeString) {
-            if (!layerCaps) {
+        var WmtsLayer = function (config) {
+            if (!config) {
                 throw new ArgumentError(
                     Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "constructor",
                         "No layer configuration specified."));
@@ -64,47 +75,38 @@ define([
              * @type {String}
              * @readonly
              */
-            this.layerIdentifier = layerCaps.identifier;
+            this.layerIdentifier = config.layerIdentifier;
+
+            if (!this.layerIdentifier) {
+                Logger.logMessage(Logger.LEVEL_WARNING, "WmtsLayer", "constructor",
+                    "No layer specified.");
+            }
 
             /**
              * The style identifier specified to this layer's constructor.
              * @type {String}
              * @readonly
              */
-            this.styleIdentifier = styleIdentifier;
+            this.styleIdentifier = config.styleIdentifier;
+
+            if (!this.styleIdentifier) {
+                Logger.logMessage(Logger.LEVEL_WARNING, "WmtsLayer", "constructor",
+                    "No default style available. A style will not be specified in tile requests.");
+            }
 
             /**
              * The time string passed to this layer's constructor.
              * @type {String}
              * @readonly
              */
-            this.timeString = timeString;
+            this.timeString = config.timeString;
 
-            // Attempt to define a default timeString from available dimensions in the event a timeString is not
-            // specified
-            if (!this.timeString && layerCaps.dimension) {
-                for (var i = 0; i < layerCaps.dimension.length; i++) {
-                    if (layerCaps.dimension[i].identifier.toLowerCase() === "time") {
-                        this.timeString = layerCaps.dimension[i].default;
-                        break;
-                    }
-                }
-            }
-
-            // Determine image format
-            var formats = layerCaps.format;
-
-            if (formats.indexOf("image/png") >= 0) {
-                this.imageFormat = "image/png";
-            } else if (formats.indexOf("image/jpeg") >= 0) {
-                this.imageFormat = "image/jpeg";
-            } else if (formats.indexOf("image/tiff") >= 0) {
-                this.imageFormat = "image/tiff";
-            } else if (formats.indexOf("image/gif") >= 0) {
-                this.imageFormat = "image/gif";
-            } else {
-                this.imageFormat = formats[0];
-            }
+            /**
+             * The mime type for images.
+             * @type {String}
+             * @readonly
+             */
+            this.imageFormat = config.imageFormat;
 
             if (!this.imageFormat) {
                 throw new ArgumentError(
@@ -112,19 +114,17 @@ define([
                         "Layer does not provide a supported image format."));
             }
 
-            if (layerCaps.resourceUrl && (layerCaps.resourceUrl.length > 0)) {
-                for (var i = 0; i < layerCaps.resourceUrl.length; i++) {
-                    if (this.imageFormat === layerCaps.resourceUrl[i].format) {
-                        this.resourceUrl = layerCaps.resourceUrl[i].template;
-                        break;
-                    }
-                }
-            } else { // resource-oriented interface not supported, so use KVP interface
-                this.serviceUrl = layerCaps.capabilities.getGetTileKvpAddress();
-                if (this.serviceUrl) {
-                    this.serviceUrl = WmsUrlBuilder.fixGetMapString(this.serviceUrl);
-                }
-            }
+            /**
+             * The URL template for accessing REST resources.
+             * @type {String}
+             * @readonly
+             */
+            this.resourceUrl = config.resourceUrl;
+
+            /**
+             * The URL root for KVP supported resources.
+             */
+            this.serviceUrl = config.serviceUrl;
 
             if (!this.resourceUrl && !this.serviceUrl) {
                 throw new ArgumentError(
@@ -132,50 +132,12 @@ define([
                         "No resource URL or KVP GetTile service URL specified in WMTS capabilities."));
             }
 
-            // Validate that the specified style identifier exists, or determine one if not specified.
-            if (this.styleIdentifier) {
-                var styleIdentifierFound = false;
-                for (var i = 0; i < layerCaps.style.length; i++) {
-                    if (layerCaps.style[i].identifier === this.styleIdentifier) {
-                        styleIdentifierFound = true;
-                        break;
-                    }
-                }
-
-                if (!styleIdentifierFound) {
-                    Logger.logMessage(Logger.LEVEL_WARNING, "WmtsLayer", "constructor",
-                        "The specified style identifier is not available. The server's default style will be used.");
-                    this.styleIdentifier = null;
-                }
-            }
-
-            if (!this.styleIdentifier) {
-                for (i = 0; i < layerCaps.style.length; i++) {
-                    if (layerCaps.style[i].isDefault) {
-                        this.styleIdentifier = layerCaps.style[i].identifier;
-                        break;
-                    }
-                }
-            }
-
-            if (!this.styleIdentifier) {
-                Logger.logMessage(Logger.LEVEL_WARNING, "WmtsLayer", "constructor",
-                    "No default style available. A style will not be specified in tile requests.");
-            }
-
-            // Find the tile matrix set we want to use. Prefer EPSG:4326, then EPSG:3857.
-            var tms, tms4326 = null, tms3857 = null;
-            for (i = 0; i < layerCaps.tileMatrixSetLink.length; i++) {
-                tms = layerCaps.tileMatrixSetLink[i].tileMatrixSetRef;
-
-                if (WmtsLayer.isEpsg4326Crs(tms.supportedCRS)) {
-                    tms4326 = tms4326 || tms;
-                } else if (WmtsLayer.isEpsg3857Crs(tms.supportedCRS)) {
-                    tms3857 = tms3857 || tms;
-                }
-            }
-
-            this.tileMatrixSet = tms4326 || tms3857;
+            /**
+             * The TileMatrixSet object to use for this layer.
+             * @type {{}}
+             * @readonly
+             */
+            this.tileMatrixSet = config.tileMatrixSet;
 
             if (!this.tileMatrixSet) {
                 throw new ArgumentError(
@@ -185,20 +147,35 @@ define([
 
             // Determine the layer's sector if possible. Mandatory for EPSG:4326 tile matrix sets. (Others compute
             // it from tile Matrix Set metadata.)
-            if (layerCaps.wgs84BoundingBox) {
+            // Sometimes BBOX defined in Matrix and not in Layer
+            if (!config.wgs84BoundingBox && !config.boundingBox) {
+                if (this.tileMatrixSet.boundingBox) {
+                    this.sector = new Sector(
+                        config.tileMatrixSet.boundingBox.lowerCorner[1],
+                        config.tileMatrixSet.boundingBox.upperCorner[1],
+                        config.tileMatrixSet.boundingBox.lowerCorner[0],
+                        config.tileMatrixSet.boundingBox.upperCorner[0]);
+                } else {
+                    // Throw an exception if there is no bounding box.
+                    throw new ArgumentError(
+                        Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "constructor",
+                            "No bounding box was specified in the layer or tile matrix set capabilities."));
+                }
+            } else if (config.wgs84BoundingBox) {
                 this.sector = new Sector(
-                    layerCaps.wgs84BoundingBox.lowerCorner[1],
-                    layerCaps.wgs84BoundingBox.upperCorner[1],
-                    layerCaps.wgs84BoundingBox.lowerCorner[0],
-                    layerCaps.wgs84BoundingBox.upperCorner[0]);
+                    config.wgs84BoundingBox.lowerCorner[1],
+                    config.wgs84BoundingBox.upperCorner[1],
+                    config.wgs84BoundingBox.lowerCorner[0],
+                    config.wgs84BoundingBox.upperCorner[0]);
             } else if (this.tileMatrixSet.boundingBox &&
-                WmtsLayerCapabilities.isEpsg4326Crs(this.tileMatrixSet.boundingBox.crs)) {
+                WmtsLayer.isEpsg4326Crs(this.tileMatrixSet.boundingBox.crs)) {
                 this.sector = new Sector(
                     this.tileMatrixSet.boundingBox.lowerCorner[1],
                     this.tileMatrixSet.boundingBox.upperCorner[1],
                     this.tileMatrixSet.boundingBox.lowerCorner[0],
                     this.tileMatrixSet.boundingBox.upperCorner[0]);
-            } else if (WmtsLayerCapabilities.isEpsg4326Crs(this.tileMatrixSet.supportedCRS)) {
+            } else if (WmtsLayer.isEpsg4326Crs(this.tileMatrixSet.supportedCRS)) {
+
                 // Throw an exception if there is no 4326 bounding box.
                 throw new ArgumentError(
                     Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "constructor",
@@ -208,16 +185,11 @@ define([
             // Form a unique string to identify cache entries.
             this.cachePath = (this.resourceUrl || this.serviceUrl) +
                 this.layerIdentifier + this.styleIdentifier + this.tileMatrixSet.identifier;
-            if (timeString) {
-                this.cachePath = this.cachePath + timeString;
+            if (this.timeString) {
+                this.cachePath = this.cachePath + this.timeString;
             }
 
-            // Determine a default display name.
-            if (layerCaps.titles.length > 0) {
-                this.displayName = layerCaps.titles[0].value;
-            } else {
-                this.displayName = layerCaps.identifier;
-            }
+            this.displayName = config.title;
 
             this.pickEnabled = false;
 
@@ -610,6 +582,129 @@ define([
         WmtsLayer.isEpsg3857Crs = function (crs) {
             return (crs.indexOf("EPSG") >= 0)
                 && ((crs.indexOf("3857") >= 0) || (crs.indexOf("900913") >= 0)); // 900913 is google's 3857 alias
+        };
+
+        WmtsLayer.isOGCCrs84 = function (crs) {
+            return (crs.indexOf("OGC") >= 0) && (crs.indexOf("CRS84") >= 0);
+        };
+
+        /**
+         *
+         * @param layerCaps {WmtsLayerCapabilities}
+         */
+        WmtsLayer.createConfigurationFromLayer = function (layerCaps) {
+            if (!layerCaps) {
+                throw new ArgumentError(
+                    Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "createConfigurationFromLayer",
+                        "No layer configuration specified."));
+            }
+
+            var config = {
+                layerIdentifier: layerCaps.identifier
+            };
+
+            // Set a default style if one is specified in the capabilities document
+            for (var i = 0; i < layerCaps.style.length; i++) {
+                var style = layerCaps.style[i];
+
+                if (style.isDefault) {
+                    config.styleIdentifier = style.identifier;
+                    break;
+                }
+            }
+
+            if (!config.styleIdentifier) {
+                Logger.logMessage(Logger.LEVEL_WARNING, "WmtsLayer", "createConfigurationFromLayer",
+                    "No default style available. A style will not be specified in tile requests.");
+            }
+
+            // Attempt to define a default timeString from available dimensions
+            if (layerCaps.dimension) {
+                for (var i = 0; i < layerCaps.dimension.length; i++) {
+                    if (layerCaps.dimension[i].identifier.toLowerCase() === "time") {
+                        config.timeString = layerCaps.dimension[i].default;
+                        break;
+                    }
+                }
+            }
+
+            // Determine image format
+            var formats = layerCaps.format;
+
+            if (formats.indexOf("image/png") >= 0) {
+                config.imageFormat = "image/png";
+            } else if (formats.indexOf("image/jpeg") >= 0) {
+                config.imageFormat = "image/jpeg";
+            } else if (formats.indexOf("image/tiff") >= 0) {
+                config.imageFormat = "image/tiff";
+            } else if (formats.indexOf("image/gif") >= 0) {
+                config.imageFormat = "image/gif";
+            } else {
+                config.imageFormat = formats[0];
+            }
+
+            if (!config.imageFormat) {
+                throw new ArgumentError(
+                    Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "createConfigurationFromLayer",
+                        "Layer does not provide a supported image format."));
+            }
+
+            if (layerCaps.resourceUrl && (layerCaps.resourceUrl.length > 0)) {
+                for (var i = 0; i < layerCaps.resourceUrl.length; i++) {
+                    if (config.imageFormat === layerCaps.resourceUrl[i].format) {
+                        config.resourceUrl = layerCaps.resourceUrl[i].template;
+                        break;
+                    }
+                }
+            } else { // resource-oriented interface not supported, so use KVP interface
+                config.serviceUrl = layerCaps.capabilities.getGetTileKvpAddress();
+                if (config.serviceUrl) {
+                    config.serviceUrl = WmsUrlBuilder.fixGetMapString(config.serviceUrl);
+                }
+            }
+
+            if (!config.resourceUrl && !config.serviceUrl) {
+                throw new ArgumentError(
+                    Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "createConfigurationFromLayer",
+                        "No resource URL or KVP GetTile service URL specified in WMTS capabilities."));
+            }
+
+            // Find the tile matrix set we want to use. Prefer EPSG:4326, then EPSG:3857, then CRS84.
+            var tms, tms4326 = null, tms3857 = null, tmsCRS84 = null;
+            var tileMatrixSets = layerCaps.getLayerSupportedTileMatrixSets();
+            for (i = 0; i < tileMatrixSets.length; i++) {
+                tms = tileMatrixSets[i];
+
+                if (WmtsLayer.isEpsg4326Crs(tms.supportedCRS)) {
+                    tms4326 = tms4326 || tms;
+                } else if (WmtsLayer.isEpsg3857Crs(tms.supportedCRS)) {
+                    tms3857 = tms3857 || tms;
+                }
+                else if (WmtsLayer.isOGCCrs84(tms.supportedCRS)) {
+                    tmsCRS84 = tmsCRS84 || tms;
+                }
+            }
+
+            config.tileMatrixSet = tms4326 || tms3857 || tmsCRS84;
+
+            if (!config.tileMatrixSet) {
+                throw new ArgumentError(
+                    Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "createConfigurationFromLayer",
+                        "No supported Tile Matrix Set could be found."));
+            }
+
+            // Configure boundingBox
+            config.boundingBox = layerCaps.boundingBox;
+            config.wgs84BoundingBox = layerCaps.wgs84BoundingBox;
+
+            // Determine a default display name.
+            if (layerCaps.titles.length > 0) {
+                config.title = layerCaps.titles[0].value;
+            } else {
+                config.title = layerCaps.identifier;
+            }
+
+            return config;
         };
 
         return WmtsLayer;
