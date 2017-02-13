@@ -605,6 +605,91 @@ define([
             return (crs.indexOf("OGC") >= 0) && (crs.indexOf("CRS84") >= 0);
         };
 
+        WmtsLayer.convertTileMatrixSets = function (layerCaps) {
+            if (!layerCaps) {
+                throw new ArgumentError(
+                    Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "convertTileMatrixSets",
+                        "No layer configuration specified."));
+            }
+
+            var convertedTileMatrixSets = [];
+
+            var tileMatrixSets = layerCaps.getLayerSupportedTileMatrixSets();
+            for (var i = 0, len = tileMatrixSets.length; i < len; i++) {
+                var tileMatrixSet = tileMatrixSets[i];
+
+                // Check coordinate system
+                var crs = tileMatrixSet.supportedCRS;
+                if (!(WmtsLayer.isEpsg4326Crs(crs) || WmtsLayer.isEpsg3857Crs(crs) || WmtsLayer.isOGCCrs84(crs))) {
+                    continue;
+                }
+
+                var compatibleTileMatrices = [];
+                var previousHeight = 0;
+                for (var j = 0, tileMatrixLength = tileMatrixSet.tileMatrix.length; j < tileMatrixLength; j++) {
+                    var tileMatrix = tileMatrixSet.tileMatrix[j];
+
+                    if (j === 0) {
+                        compatibleTileMatrices.push(tileMatrix);
+                        continue;
+                    }
+
+                    // TODO Check top left corner values
+
+                    // Aspect ratio check - dependent on crs
+                    if (WmtsLayer.isEpsg3857Crs(crs)) {
+                        if (tileMatrix.matrixHeight != tileMatrix.matrixWidth) {
+                            continue;
+                        }
+                    } else if (WmtsLayer.isEpsg4326Crs(crs) || WmtsLayer.isOGCCrs84(crs)) {
+                        if ((tileMatrix.matrixHeight * 2) != tileMatrix.matrixWidth) {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+
+                    // Quad division check
+                    if ((tileMatrix.matrixHeight % 2 != 0) || (tileMatrix.matrixWidth % 2 != 0)) {
+                        continue;
+                    }
+
+                    // Image Squareness
+                    if (tileMatrix.tileHeight != tileMatrix.tileWidth) {
+                        continue;
+                    }
+
+                    // Image Size
+                    if (tileMatrix.tileHeight != 256) {
+                        continue;
+                    }
+
+                    // Ensure quad division behavior from previous tile matrix and add compatible tile matrix
+                    if ((previousHeight == 0) || ((2 * previousHeight) == tileMatrix.matrixHeight)) {
+                        previousHeight = tileMatrix.matrixHeight;
+                        compatibleTileMatrices.push(tileMatrix);
+                    }
+                }
+
+                if (compatibleTileMatrices.length > 1) {
+                    var convertedTileMatrixSet = {};
+                    convertedTileMatrixSet.identifier = tileMatrixSet.identifier;
+                    convertedTileMatrixSet.supportedCRS = tileMatrixSet.supportedCRS;
+                    if (tileMatrixSet.wellKnownScaleSet) {
+                        convertedTileMatrixSet.wellKnownScaleSet = tileMatrixSet.wellKnownScaleSet;
+                    }
+                    if (tileMatrixSet.boundingBox) {
+                        convertedTileMatrixSet.boundingBox = tileMatrixSet.boundingBox;
+                    }
+                    convertedTileMatrixSet.tileMatrix = compatibleTileMatrices;
+                    convertedTileMatrixSets.push(convertedTileMatrixSet);
+                }
+
+            }
+
+            return convertedTileMatrixSets;
+        };
+
         /**
          *
          * @param layerCaps {WmtsLayerCapabilities}
@@ -686,25 +771,22 @@ define([
                         "No resource URL or KVP GetTile service URL specified in WMTS capabilities."));
             }
 
-            // Find the tile matrix set we want to use. Prefer EPSG:4326, then EPSG:3857, then CRS84.
-            var tms, tms4326 = null, tms3857 = null, tmsCRS84 = null;
-            var tileMatrixSets = layerCaps.getLayerSupportedTileMatrixSets();
-            for (i = 0; i < tileMatrixSets.length; i++) {
-                tms = tileMatrixSets[i];
-
-                if (WmtsLayer.isEpsg4326Crs(tms.supportedCRS)) {
-                    tms4326 = tms4326 || tms;
-                } else if (WmtsLayer.isEpsg3857Crs(tms.supportedCRS)) {
-                    tms3857 = tms3857 || tms;
+            var compatibleTileMatrixSets = WmtsLayer.convertTileMatrixSets(layerCaps);
+            if (compatibleTileMatrixSets.length > 0) {
+                // Find the TileMatrixSet with the greatest number layers
+                var highestResTileMatrixSet = null;
+                for (var i = 0; i < compatibleTileMatrixSets.length; i++) {
+                    var tms = compatibleTileMatrixSets[i];
+                    if (!highestResTileMatrixSet) {
+                        highestResTileMatrixSet = tms;
+                    } else {
+                        if (tms.tileMatrix.length > highestResTileMatrixSet.length) {
+                            highestResTileMatrixSet = tms;
+                        }
+                    }
                 }
-                else if (WmtsLayer.isOGCCrs84(tms.supportedCRS)) {
-                    tmsCRS84 = tmsCRS84 || tms;
-                }
-            }
-
-            config.tileMatrixSet = tms4326 || tms3857 || tmsCRS84;
-
-            if (!config.tileMatrixSet) {
+                config.tileMatrixSet = tms;
+            } else {
                 throw new ArgumentError(
                     Logger.logMessage(Logger.LEVEL_SEVERE, "WmtsLayer", "createConfigurationFromLayer",
                         "No supported Tile Matrix Set could be found."));
