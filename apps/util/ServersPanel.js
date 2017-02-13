@@ -254,7 +254,7 @@ define(function () {
 
     ServersPanel.prototype.addLayer = function (layerCaps) {
         if (layerCaps.name) {
-            var config = WorldWind.WmsLayer.formLayerConfiguration(layerCaps, null);
+            var config = WorldWind.WmsLayer.createConfigurationFromLayer(layerCaps);
             var layer;
 
             if (config.timeSequences &&
@@ -286,7 +286,7 @@ define(function () {
                 layer.timeSequence = timeSequence;
             }
             else {
-                layer = new WorldWind.WmsLayer(config, null);
+                layer = new WorldWind.WmsLayer(config);
                 this.timeSeriesPlayer.timeSequence = null;
                 this.timeSeriesPlayer.layer = null;
             }

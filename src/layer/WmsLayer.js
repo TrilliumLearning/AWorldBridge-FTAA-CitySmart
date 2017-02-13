@@ -42,22 +42,21 @@ define([
          *     <li>size: {Number} The size in pixels of tiles for this layer.</li>
          *     <li>coordinateSystem (optional): {String} The coordinate system to use for this layer, e.g., EPSG:4326.</li>
          *     <li>styleNames (optional): {String} A comma separated list of the styles to include in this layer.</li>
+         *     <li>timeString (optional): {String} the time parameter passed to the WMS when imagery is requested. </li>
          * </ul>
-         * The function [WmsLayer.formLayerConfiguration]{@link WmsLayer#formLayerConfiguration} will create an
+         * The function [WmsLayer.createConfigurationFromlayer]{@link WmsLayer#createConfigurationFromLayer} will create an
          * appropriate configuration object given a {@link WmsLayerCapabilities} object.
-         * @param {String} timeString The time parameter passed to the WMS server when imagery is requested. May be
-         * null, in which case no time parameter is passed to the server.
          * @throws {ArgumentError} If the specified configuration is null or undefined.
          */
-        var WmsLayer = function (config, timeString) {
+        var WmsLayer = function (config) {
             if (!config) {
                 throw new ArgumentError(
                     Logger.logMessage(Logger.LEVEL_SEVERE, "WmsLayer", "constructor", "No configuration specified."));
             }
 
             var cachePath = config.service + config.layerNames + config.styleNames;
-            if (timeString) {
-                cachePath = cachePath + timeString;
+            if (config.timeString) {
+                cachePath = cachePath + config.timeString;
             }
 
             TiledImageLayer.call(this, config.sector, config.levelZeroDelta, config.numLevels, config.format,
@@ -66,18 +65,20 @@ define([
             this.displayName = config.title;
             this.pickEnabled = false;
 
-            this.urlBuilder = new WmsUrlBuilder(config.service, config.layerNames, config.styleNames, config.version,
-                timeString);
-            if (config.coordinateSystem) {
-                this.urlBuilder.crs = config.coordinateSystem;
-            }
-
             /**
              * The time string passed to this layer's constructor.
              * @type {String}
              * @readonly
              */
-            this.timeString = timeString;
+            this.timeString = config.timeString;
+
+            this.urlBuilder = new WmsUrlBuilder(config.service, config.layerNames, config.styleNames, config.version,
+                this.timeString);
+            if (config.coordinateSystem) {
+                this.urlBuilder.crs = config.coordinateSystem;
+            }
+
+
         };
 
         WmsLayer.prototype = Object.create(TiledImageLayer.prototype);
@@ -93,7 +94,7 @@ define([
          * @returns {{}} A configuration object.
          * @throws {ArgumentError} If the specified WMS layer capabilities is null or undefined.
          */
-        WmsLayer.formLayerConfiguration = function (wmsLayerCapabilities) {
+        WmsLayer.createConfigurationFromLayer = function (wmsLayerCapabilities) {
             var config = {
                 title: wmsLayerCapabilities.title,
                 version: wmsLayerCapabilities.capability.capsDoc.version
@@ -155,6 +156,9 @@ define([
             var dimensions = WmsLayer.parseTimeDimensions(wmsLayerCapabilities);
             if (dimensions && dimensions.length > 0) {
                 config.timeSequences = dimensions;
+
+                // Set the first time dimension as the default config time to the last available time (endTime)
+                config.timeString = config.timeSequences[config.timeSequences.length - 1].endTime.toISOString();
             }
 
             return config;
