@@ -448,6 +448,8 @@ define([
                 return this.createTile4326(tileMatrix, row, column);
             } else if (WmtsLayer.isEpsg3857Crs(this.tileMatrixSet.supportedCRS)) {
                 return this.createTile3857(tileMatrix, row, column);
+            } else if (WmtsLayer.isOGCCrs84(this.tileMatrixSet.supportedCRS)) {
+                return this.createTileCrs84(tileMatrix, row, column);
             }
         };
 
@@ -457,6 +459,19 @@ define([
                 maxLat = tileMatrix.topLeftCorner[0] - row * tileDeltaLat,
                 minLat = maxLat - tileDeltaLat,
                 minLon = tileMatrix.topLeftCorner[1] + tileDeltaLon * column,
+                maxLon = minLon + tileDeltaLon;
+
+            var sector = new Sector(minLat, maxLat, minLon, maxLon);
+
+            return this.makeTile(sector, tileMatrix, row, column);
+        };
+
+        WmtsLayer.prototype.createTileCrs84 = function (tileMatrix, row, column) {
+            var tileDeltaLat = this.sector.deltaLatitude() / tileMatrix.matrixHeight,
+                tileDeltaLon = this.sector.deltaLongitude() / tileMatrix.matrixWidth,
+                maxLat = tileMatrix.topLeftCorner[1] - row * tileDeltaLat,
+                minLat = maxLat - tileDeltaLat,
+                minLon = tileMatrix.topLeftCorner[0] + tileDeltaLon * column,
                 maxLon = minLon + tileDeltaLon;
 
             var sector = new Sector(minLat, maxLat, minLon, maxLon);
@@ -519,6 +534,8 @@ define([
                 return new Texture(dc.currentGlContext, image);
             } else if (WmtsLayer.isEpsg3857Crs(this.tileMatrixSet.supportedCRS)) {
                 return this.createTexture3857(dc, tile, image);
+            } else if (WmtsLayer.isOGCCrs84(this.tileMatrixSet.supportedCRS)) {
+                return new Texture(dc.currentGlContext, image);
             }
         };
 
