@@ -7,7 +7,7 @@
  */
 
 requirejs(['../src/WorldWind',
-        './LayerManager'],
+        './TestLayerManager'],
     function (ww,
               LayerManager) {
         "use strict";
@@ -17,14 +17,21 @@ requirejs(['../src/WorldWind',
         var wwd = new WorldWind.WorldWindow("canvasOne");
 
         var layers = [
+            // Create and add imagery layers.
             {layer: new WorldWind.BMNGLayer(), enabled: true},
-            {layer: new WorldWind.BMNGLandsatLayer(), enabled: false},
-            {layer: new WorldWind.BingAerialLayer(null), enabled: false},
             {layer: new WorldWind.BingAerialWithLabelsLayer(null), enabled: true},
-            {layer: new WorldWind.BingRoadsLayer(null), enabled: false},
+            //{layer: new WorldWind.BingAerialLayer(null), enabled: false},
+
+            // Create and add a compass and view controls.
+            //{layer: new WorldWind.BingRoadsLayer(null), enabled: false},
+            //{layer: new WorldWind.CoordinatesDisplayLayer(wwd), enabled: true},
             {layer: new WorldWind.CompassLayer(), enabled: true},
-            {layer: new WorldWind.CoordinatesDisplayLayer(wwd), enabled: true},
-            {layer: new WorldWind.ViewControlsLayer(wwd), enabled: true}
+            {layer: new WorldWind.ViewControlsLayer(wwd), enabled: false},
+
+            // Create and add layers for shapes, but don't add any shapes yet.
+            {layer: new RenderableLayer(), enabled: true},
+            {layer: new RenderableLayer(), enabled: false},
+
 
         ];
 
@@ -33,8 +40,9 @@ requirejs(['../src/WorldWind',
             wwd.addLayer(layers[l].layer);
         }
 
+        // Update the display.
+        wwd.redraw();
+
         // Create a layer manager for controlling layer visibility.
         var layerManger = new LayerManager(wwd);
-
-        wwd.redraw();
     });

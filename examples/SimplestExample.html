@@ -28,10 +28,18 @@
         wwd.addLayer(new WorldWind.BMNGOneImageLayer());
         wwd.addLayer(new WorldWind.BingAerialWithLabelsLayer());
 
+
         // Add a compass, a coordinates display and some view controls to the World Window.
         wwd.addLayer(new WorldWind.CompassLayer());
         wwd.addLayer(new WorldWind.CoordinatesDisplayLayer(wwd));
         wwd.addLayer(new WorldWind.ViewControlsLayer(wwd));
+
+        // Create and add layers for shapes, but don't add any shapes yet.
+        wwd.addLayer(new RenderableLayer());
+        wwd.addLayer(new RenderableLayer());
+
+        // Update the display.
+        wwd.redraw();
     }
 </script>
 </body>
